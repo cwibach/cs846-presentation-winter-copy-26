@@ -1,9 +1,0 @@
-name: "CodeQL config for problem_d"
-
-paths:
-  - problem_d
-
-paths-ignore:
-  - '**/node_modules/**'
-  - '**/dist/**'
-  - '**/build/**'

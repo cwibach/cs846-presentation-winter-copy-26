@@ -1,0 +1,31 @@
+name: Semgrep (problem_d)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat-audit
+      - feat-generate-report
+      - feat-audit-based-on-role
+    paths:
+      - 'problem_d/**'
+      - '.github/workflows/semgrep.yml'
+      - '.github/semgrep.yml'
+
+jobs:
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: .github/semgrep.yml
+          scanDir: problem_d

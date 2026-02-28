@@ -1,0 +1,32 @@
+rules:
+  - id: typescript-no-any
+    pattern: "$X: any"
+    message: "Avoid 'any' in TypeScript."
+    languages:
+      - typescript
+    severity: WARNING
+
+  - id: typescript-no-implicit-any
+    pattern: "function $F(...$ARGS) { ... }"
+    message: "Function should have explicit parameter and return types."
+    languages:
+      - typescript
+    severity: WARNING
+
+  - id: typescript-no-console
+    pattern: "console.$M(...)"
+    message: "Avoid console usage in production code."
+    languages:
+      - typescript
+      - javascript
+    severity: WARNING
+
+  - id: node-sync-fs
+    patterns:
+      - pattern: "fs.readFileSync(...)"
+      - pattern: "fs.writeFileSync(...)"
+    message: "Avoid sync fs calls in production paths."
+    languages:
+      - typescript
+      - javascript
+    severity: WARNING
