@@ -2,6 +2,8 @@
 
 ## 1. Problems
 
+**Model to use:** [GPT-4.1]
+
 **Problem B_1: Code review**
 
 **Task description:**  

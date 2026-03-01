@@ -1,5 +1,7 @@
 """
 Helpers for user display and lookup. Used by the dashboard.
+
+The code was generated using gpt-4.1.
 """
 
 def get_user_display(user_id):
