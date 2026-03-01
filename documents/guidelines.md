@@ -32,8 +32,76 @@ Provide a brief illustrative example (code or pseudo-code if helpful).
 
 ---
 
-### Guideline 2: [Short, Actionable Title]
-(Repeat the same structure for each guideline.)
+### Guideline 2: Use Automated CI Gates [8]
+
+#### Guideline 2.1: Continue Using Static Analysis Tools [11]
+
+**Description:**
+
+Integrate static analysis tools (e.g., linters, type checkers, security scanners) into your CI pipeline and configure them as mandatory checks before pull request merge. GitHub CI supports assorted static analysis tool integrations like CodeQL (primarily for security), Semgrep (pattern based bug finding with customized rules), and your ecosystem’s usual linters/type checkers (ESLint/tsc, pylint/mypy, etc.). 
+
+**Reasoning:**
+
+Unlike LLMs, most static analysis tools like Semgrep, CodeQL, etc. are deterministic and rule-based. They enforce predefined constraints across all changes, which can provide a consistent and systematic guarantee to your project. Depending on its proprietary, static analysis tools are generally capable of detecting: Syntax and type errors, Code style violations, Security vulnerabilities, Dead code or unreachable branches, and Complexity thresholds. However, this is not in conflict with LLM-assisted Code Review, as static analysis tools sometimes lack flexibility and may generate false alarms. These tools should be combined together. 
+
+**Good Example:**
+
+Customized static analysis patterns should neither be overly broad nor overly strict.
+
+- If it's too broad, it may trigger too many false positives. 
+- If it's too strict, it likely will not catch anything. 
+
+A good static analysis pattern definition should find a balance in between, and match project-specific conventions and expectations. 
+
+A good example can be found at `.github/semgrep.yml`. 
+
+**Bad Example:**
+
+Static analysis patterns being too broad or too strict. 
+
+#### Guideline 2.2: Use Automated Dependency Management Tools
+
+**Description:**
+
+Enable automated dependency monitoring and update mechanisms in your CI/CD workflow to continuously detect and remediate vulnerable or outdated third-party packages before merge.
+
+**Reasoning:**
+
+A large portion of modern security risk does not originate from first-party code, but from third-party dependencies [17]. Even if your internal code is perfectly written, a vulnerable library version can introduce critical vulnerabilities into production. Automated dependency management tools like Dependabot are continuously monitoring vulnerability databases and ensuring the packages used are free of known vulnerabilities, so as to mitigate software supply-chain attacks. 
+
+**Good Example:**
+
+In your repository, go to:
+
+Settings -> Security -> Advanced Security -> Dependabot -> Enable Dependabot Alerts. 
+
+And then go to:
+
+Security -> Vulnerability Alerts -> Dependabot. 
+
+**Bad Example:**
+
+```
+You are an experienced coding agent, please verify the dependency versions for me: [path-to-file].
+```
+
+#### Guideline 2.3 Enforce Test Quality over Coverage [18]
+
+**Description:**
+
+Require automated tests to run in CI and enforce a minimum, meaningful test coverage threshold as a mandatory condition before merging. In addition, manually review test quality — do not rely solely on coverage metrics.
+
+**Reasoning:**
+
+While static analysis and dependency scanning catch structural and known vulnerability issues, they do not validate runtime behavior. Tests provide behavioral guarantees and protect against regressions.
+
+**Good Example:**
+
+Ensure good testing principles like Blackbox testing, Whitebox testing, MC/DC testing, mutation test etc, in alignment with project-specific conventions and risk expectations. Establish a team-wide test coverage as a threshold. 
+
+**Bad Example:**
+
+Writing meaningless test cases to inflate high test coverage.
 
 ---
 
