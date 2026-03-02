@@ -1,6 +1,6 @@
 # Code Review Guideline
 
-## Guideline: Provide full context when asking for code review
+<!-- ## Guideline: Provide full context when asking for code review
 
 **Description:**  
 Design your prompt so the LLM receives a clear “job description” before reviewing code. Include sufficient and relevant context—goal of the change, constraints the code must satisfy, and what aspects you want reviewed—so the problem space is constrained and the feedback is targeted.
@@ -27,7 +27,7 @@ Review the following code for: correctness, error handling, security (what we ex
 
 ```
 Please review the code above and give feedback on correctness, security, and edge cases.
-```
+``` -->
 
 <!-- 
 <<<Rethinking Code Review Workflows with LL Assistance: An Empirical Study>>>
@@ -158,59 +158,58 @@ Review this entire 10,000-line diff at once.
 
  <!--
 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<FINAL GUIDELINE>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+-->
 
 
+## Guideline: Use a Structured, Context-First Review Prompt
 
-Guideline: Use a Structured, Context-First Review Prompt
-Description
+### Description
 
-When prompting an LLM for code review, first request a structured summary of the pull request (intent, affected components, high-risk areas), then provide explicitly scoped review criteria (e.g., correctness, security, performance) using clear bullet-point instructions.
+When prompting an LLM for code review, first have it produce a structured summary of the pull request (intent, affected components, and high-risk areas). Then, give explicitly scoped review criteria (for example, correctness, security, and performance) as clear bullet-point instructions.
 
-Reasoning
+### Reasoning
 
 This guideline merges the strongest findings across sources:
 
-Rethinking Code Review Workflows (Empirical Study):
-Developers preferred AI-led summaries before issue detection to reduce cognitive load and improve contextual understanding.
-
-Automated Code Review in Practice:
-Unfocused, noisy feedback increases PR closure time and reduces trust. Review criteria must be scoped to high-impact areas.
-
-Copilot Instructions Blog:
-Structured prompts (headings + bullet points) improve consistency and reduce ambiguity in LLM outputs.
+- **Rethinking Code Review Workflows (empirical study)**: Developers preferred AI-led summaries before issue detection to reduce cognitive load and improve contextual understanding.
+- **Automated Code Review in Practice**: Unfocused, noisy feedback increases PR closure time and reduces trust; review criteria must be scoped to high-impact areas.
+- **Copilot Instructions blog**: Structured prompts (headings + bullet points) improve consistency and reduce ambiguity in LLM outputs.
 
 Together, these findings show that effective LLM-assisted code review requires:
 
-Context understanding first
+- Context understanding first  
+- Clear scoping of review focus  
+- Structured prompt formatting  
 
-Clear scoping of review focus
+### Good Example
 
-Structured prompt formatting
-
-Good Example
 You are reviewing a pull request.
 
-Step 1 — Context Summary
-- Summarize the intent of the PR.
-- Identify affected components.
-- Highlight complex or high-risk areas.
+**Step 1 — Context summary**
 
-Step 2 — Focused Review
+- Summarize the intent of the PR.  
+- Identify affected components.  
+- Highlight complex or high-risk areas.  
+
+**Step 2 — Focused review**
+
 Review only for:
-- correctness
-- security risks
-- performance regressions
+
+- correctness  
+- security risks  
+- performance regressions  
 
 Do not suggest stylistic changes unless they affect correctness.
-Bad Example
+
+### Bad Example
+
 Review this pull request and suggest improvements.
- -->
 
 
 
 
- <!--
- ## Guideline: Explicitly State Assumptions and Non-Goals
+
+## Guideline: Explicitly State Assumptions and Non-Goals
 
 ### Description
 
@@ -267,5 +266,3 @@ Review only the changes in this diff for:
 Review this PR and suggest improvements.
 OR
 Review this PR for correctness and security
-
- -->
