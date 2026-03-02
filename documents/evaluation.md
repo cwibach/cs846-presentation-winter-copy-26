@@ -66,8 +66,9 @@ However, multer package versions < 2.1.0 are known to be severely vulnerable to 
 | Attack Requirement | None |
 | Privileges Required | None | 
 | User Interaction | None |
-| Related CWE | CWE-459 Incomplete Cleanup | 
+| Related CWE | CWE-459: Incomplete Cleanup | 
 
+Any approach that successfully identified this vulnerable dependency is a correct solution. 
 
 
 
