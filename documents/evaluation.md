@@ -17,15 +17,15 @@ Criteria should be applicable to any problem in this topic.
 
 ## 2. Evalation specifically for Example Problems
 
-<!-- ### Problem A_1: Verify the Program
+### Problem A_1: Verify the Program
 
 **Evaluation Description:**  
-Describe the evaluation criteria clearly and precisely.
+There is no evaluation for ``Problem A_1`` as it is to verify whether the program is running or not. If you find some tests failed here, you can compare the failed tests with the code review process in the next questions, to justify whether the code review process can find any of those failed tests or mentions any of them explicitly as issues to fix bugs.
 
 **Code:**  
 // Include all necessary code here that is the correct answer.
 
---- -->
+---
 
 ### Problem A_2: Code Review: Identify Bugs and Issues with GitHub Copilot
 
@@ -116,7 +116,9 @@ This code appears to be well-structured and looks fine to me. Please perform a q
    - **Fix:** Use SHA-256 or another modern hash function.
 
 ### Why This Is Weak
+
 The bad prompt didn't just produce fewer results; it gave a false verdict. In conclusion, the code seems to work as intended, but SQL injection vulnerabilities are present in storage.py, which is more dangerous than returning no output at all. This directly aligns with Cihan et al. [13]: without proper context and structure, LLM reviewers tend to rely on surface-level checks and can even mislead the reviewer into a false sense of confidence. 
+
 ---
 
 ### Problem A_3: Code Review: Quality & Improvement Analysis
@@ -169,9 +171,8 @@ List issues where an automated fix is INSUFFICIENT, and a human must make a cont
 | SECURITY     | P1           | `fingerprint.py + generate + Line 37`         | Uses MD5 for fingerprinting.                                             | MD5 is cryptographically broken and unsuitable for deduplication.                | Use SHA-256 or another modern hash function.                                      | Medium              |
 | BUG FIX      | P2           | `storage.py + Line 30`                        | Single SQLite connection shared across threads.                          | Can corrupt the database under concurrent load.                                  | Use `check_same_thread=False` and external locking.                               | High                |
 
----
 
-### 4. HUMAN REVIEW REQUIRED
+```HUMAN REVIEW REQUIRED```
 1. **`fingerprint.py + normalize_message + Line 71`**
    - **Why AI cannot resolve**: Normalization rules for UUIDs, timestamps, and IPs require domain-specific knowledge to avoid over-normalization or data loss.
 
@@ -190,10 +191,10 @@ This code seems mostly fine; can you quickly go through  crash_dedup/ and fix an
 ```
 
 ### Bad Example Output
-*Correctness:* Issues like division by zero, memory leaks, and incomplete normalization were identified and addressed with suggested fixes.
-*Security Posture:* Hardcoded credentials and the use of MD5 were flagged as critical vulnerabilities, with recommendations to use environment variables and SHA-256.
-*Improvement Plan:* A prioritized table of fixes was provided, categorizing issues by severity and regression risk.
-*Human Review Required:* Specific areas requiring manual intervention were highlighted, such as normalization rules and secure infrastructure setup.
+**Correctness:** Issues like division by zero, memory leaks, and incomplete normalization were identified and addressed with suggested fixes.
+**Security Posture:** Hardcoded credentials and the use of MD5 were flagged as critical vulnerabilities, with recommendations to use environment variables and SHA-256.
+**Improvement Plan:** A prioritized table of fixes was provided, categorizing issues by severity and regression risk.
+**Human Review Required:** Specific areas requiring manual intervention were highlighted, such as normalization rules and secure infrastructure setup.
 
 Let me know if you need further edits or additional details!
 

@@ -12,8 +12,8 @@
 
 You are given crash-dedup, which deduplicates crash reports from distributed systems by grouping repeated crashes into a single entry so developers can focus on unique issues. The project consists of four modules: fingerprint.py, which generates MD5 fingerprints from stack traces; deduplicator.py, which groups crashes based on similarity; storage.py, which stores and retrieves reports using SQLite; and analyzer.py, which computes crash frequency statistics and generates reports.
 
-Setup: run once before starting: pip install -r requirements.txt
-Use the GPT-4 model for this problem
+Setup: run once before starting: ```pip install -r requirements.txt```
+Use the **GPT-4.1** model for this problem
 
 ### Problem A_1: Verify the Program
 
@@ -21,7 +21,7 @@ Use the GPT-4 model for this problem
 Execute the existing test suite for the project. Record the number of tests that pass and fail and document any error messages or failures observed during execution. For testing, use python -m pytest tests/ -v.
 
 **Starter Code:**  
-See all files inside the crash_dedup/ folder and the tests/ folder in the problem_a project directory.
+See all files inside the ``crash_dedup/`` folder and the ``tests/`` folder in the ``problem_a`` project directory.
 
 ---
 
@@ -32,7 +32,7 @@ Use GitHub Copilot Chat to review all files in the crash_dedup/ directory. Ask C
 
 
 **Starter Code:**  
-See all files inside the crash_dedup/ folder and the tests/ folder in the problem_a project directory.
+See all files inside the ``crash_dedup/`` folder and the ``tests/`` folder in the ``problem_a`` project directory.
 
 ---
 
@@ -42,7 +42,7 @@ See all files inside the crash_dedup/ folder and the tests/ folder in the proble
 Use GitHub Copilot Chat to review the code in the crash_dedup/ directory. Ask Copilot to evaluate the correctness, code quality, comment quality, code style, and security aspects of the code. For each issue identified, categorize it as Bug Fix, Documentation, and indicate any cases that cannot be detected by the Copilot prompt.
 
 **Starter Code:**  
-See all files inside the crash_dedup/ folder and the tests/ folder in the problem_a project directory.
+See all files inside the ``crash_dedup/`` folder and the ``tests/`` folder in the ``problem_a`` project directory.
 
 ---
 
