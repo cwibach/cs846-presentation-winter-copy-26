@@ -197,9 +197,34 @@ This code seems mostly fine; can you quickly go through  crash_dedup/ and fix an
 
 Let me know if you need further edits or additional details!
 
-
 ### Why This Is Weak
 It missed specific line numbers, all regression risks, the thread-safety architectural context, and the distinction between what requires human judgment versus what can be fixed automatically. A student acting on the bad output would believe the review is thorough when it is not, which is precisely the false confidence problem identified by Cihan et al.[13].
+
+
+**Human Evaluation:**
+**HE-1:** Hardcoded Credentials (config.py):
+ - Copilot detects sk-prod-9x8K2mN4pQ7rT3vW6yZ1aB2c and recommends moving it to an environment variable.
+ - Cannot determine if the key is exposed in git history across all branches and tags.
+ - Cannot assess whether unauthorized use has already occurred or which systems are at risk.
+ - Humans must run git log -S 'sk-prod' --all, contact the security team, and confirm no unauthorized access before closing this finding.
+
+**HE-2:** SQL Injection (storage.py):
+ - Copilot identifies the f-string interpolation in search_by_error_type() and recommends parameterized queries.
+ - Cannot determine whether error_type is user-controlled or whether the database is network-accessible.
+ - Cannot assess whether regulatory obligations (GDPR, SOC 2, PCI-DSS) require immediate escalation.
+ - Humans must threat-model the data flow and assess the regulatory context before determining urgency.
+
+**HE-3:** Thread-Safety (storage.py):
+ - Copilot flags the single shared self._conn and recommends a connection pool.
+ - Cannot determine whether the service is deployed in a multi-threaded framework (FastAPI, Gunicorn) or a single-process script.
+ - Cannot assess whether a connection pool would introduce uncommitted transactions across requests.
+ - Humans must review the deployment architecture to determine whether this is a P1 blocker or a non-issue.
+
+**HE-4:** Similarity Metric (deduplicator.py):
+ - Copilot flags compute_similarity() and may suggest Jaccard or cosine similarity as a replacement.
+ - Cannot determine what constitutes a same crash for this product or what error rates are acceptable.
+ - Cannot decide whether the metric should operate on raw frames, normalized messages, or both.
+ - Human must define the deduplication contract and validate against production data before any algorithm change.
 
 ---
 
