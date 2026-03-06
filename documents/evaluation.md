@@ -47,6 +47,208 @@ Describe the evaluation criteria clearly and precisely.
 
 ---
 
+## Problem B: Backend PR Review and Comment Validation
+
+## Problem B.1: Security and Data Exposure
+
+**Model to Use:** GPT-4.1
+
+## Evaluation Description
+
+The review should:
+- Identify security and trust-boundary risks scoped only to the code introduced in the diff.
+- For each risk, include: the attack/failure path, the impacted endpoint or helper function with a line reference, and a concrete mitigation.
+- Avoid flagging issues that are explicitly out of scope per the PR description (e.g., authentication handled upstream, architectural redesign).
+- Not repeat general security advice unrelated to the specific code changes.
+
+---
+
+## Bad Example
+
+### Prompt Used
+```
+Please solve this question for me: Review only security/trust-boundary risks: auth boundaries, sensitive data exposure, internal ID leakage, input handling, and URL/external-call safety. 
+For each risk, include: attack/failure path, impacted endpoint/helper, and mitigation.
+```
+
+### Characteristics of Output
+- Findings are listed without reference to specific line numbers or function names in the diff.
+- Flags authentication gaps (e.g., missing token validation, role-based access control) even though the PR explicitly states authentication is handled upstream.
+- Suggests adding tests for token expiry and privilege escalation — out of scope for a security review pass.
+- Mitigations are generic (e.g., "ensure all endpoints consistently require and validate JWTs") rather than tied to the actual code.
+- Summary repeats points already made in the findings without adding new insight.
+
+### Why This Is Weak
+The LLM was given no boundaries, so it hallucinated concerns about the surrounding system (auth, RBAC, token validation) that the PR explicitly says are out of scope. Without line references, none of the findings are immediately actionable, a reviewer would need to re-read the entire diff to locate the issue themselves.
+
+## Good Example
+
+### Prompt Used
+```
+I am reviewing a pull request. Below is the diff and PR description. [diff] [PR_description] Assumptions: - Authentication and input validation are handled upstream. - Only evaluate code introduced in this diff. Non-goals: - Do not flag out-of-scope items from the PR description. - Do not suggest architectural redesigns. Review only for security and trust-boundary risks: auth boundaries, sensitive data exposure, internal ID leakage, and URL/external-call safety. For each risk: state the attack/failure path, the impacted function (with line reference), and a mitigation.
+```
+
+### Characteristics of Output
+- Each finding includes specific line numbers and function names (e.g., `get_user_list` lines 61–75, `lookup_by_email` lines 89–101).
+- Authentication is acknowledged as enforced by FastAPI's dependency injection rather than flagged as a gap which is consistent with the PR's stated assumptions.
+- External call safety finding is precise: correctly notes the base URL is fixed and trusted, and scopes the SSRF risk only to future changes.
+- Mitigations are concrete and tied to the specific lines identified.
+- Does not suggest architectural redesigns or out-of-scope changes.
+
+### Why This Is Better
+By stating assumptions and non-goals upfront, the LLM stayed within the actual scope of the PR. The findings are immediately actionable because each one is anchored to a specific location in the code. The output is shorter and more precise, a reviewer can act on it directly without filtering out noise.
+
+---
+
+## Problem B.2: Test Adequacy
+
+**Model to Use:** GPT-4.1
+
+## Evaluation Description
+
+The review should:
+- Identify brittle or misleading tests by pointing to specific test names and the exact lines that make them brittle.
+- Identify missing edge cases by referencing the specific test or function that lacks coverage.
+- Identify gaps between intended behavior and actual coverage by citing both the code and the test (or lack of one).
+- Propose only the minimum additional tests needed before merge — not a comprehensive wishlist.
+- Ground every finding in a specific line or test name from the diff.
+
+---
+
+## Bad Example
+
+### Prompt Used
+```
+Review only test quality. Identify brittle/misleading tests, missing edge cases, and gaps between intended behavior and coverage. Propose the minimum additional tests needed before merge.
+```
+
+### Characteristics of Output
+- Findings reference test names but rarely quote the specific lines that make them brittle (e.g., "hardcoded user counts" without citing the actual assertion).
+- Flags missing tests for JWT expiry, RBAC, and SQL injection — none of which are in scope for this PR or its stated constraints.
+- "Minimum additional tests" list contains 7 items, several of which are out of scope (role-based access control, SQL injection, seed logic rollback).
+- No distinction between what the tests *document intentionally* (e.g., the skipped test) and what is genuinely missing.
+- Summary repeats the findings without adding new information.
+
+### Why This Is Weak
+Without being instructed to ground findings in specific lines, the LLM drifted into generic test advice — suggesting tests for concerns the PR explicitly does not address. The "minimum tests before merge" list is not minimum at all; it includes items that would be appropriate for a broader test audit but not for this specific PR.
+
+## Good Example
+
+### Prompt Used
+```
+I am reviewing a pull request. Below is the diff, PR description, and test file. [diff] [PR_description] [location to test_user_helpers.py]. Review only for test quality: brittle or misleading tests, missing edge cases, and gaps between intended behavior and coverage. For each finding: 1. Quote the specific test or line of code that supports your claim. 2. Explain the gap using only those lines. 3. If you cannot point to a specific line, do not include the finding. End with the minimum list of additional tests needed before merge.
+```
+
+### Characteristics of Output
+- Every finding quotes the exact assertion or decorator that is the problem (e.g., `assert len(calls["urls"]) == 2` in `test_format_user_for_header_avoids_extra_calls`).
+- Correctly distinguishes between intentionally skipped tests (documented behavior not yet implemented) and genuinely missing coverage.
+- Identifies that `test_get_user_list_filters_role_and_hides_internal_id` is misleading because it asserts `"id" in u` while the comment implies the opposite intent — a subtle but important finding that requires reading the specific line.
+- Minimum tests list contains 5 targeted items, all tied directly to gaps identified in the diff.
+- Does not suggest out-of-scope tests (JWT, RBAC, SQL injection).
+
+### Why This Is Better
+By requiring line-level evidence, the LLM caught a subtle misleading test that the naive prompt missed entirely — the test that *documents* ID exposure while *implying* it should be hidden. The minimum tests list is genuinely minimal because the LLM could only include items it could justify with a specific line, which filtered out the generic suggestions that appeared in the naive output.
+
+---
+
+## Problem B.3: Peer Review Comment Validation
+
+**Model to Use:** GPT-4.1
+
+## Evaluation Description
+
+The review should:
+- Quote the specific lines from the code that are directly relevant to the claim being validated.
+- Explain whether those lines support or contradict the claim based on how FastAPI's `Depends()` mechanism actually works, not based on general intuition.
+- Reach a clear classification: `Accurate`, `Partially Accurate`, or `Inaccurate`.
+- Provide a brief, grounded reasoning and a concrete recommended follow-up action.
+
+---
+
+## Bad Example
+
+### Prompt Used
+```
+Use an LLM to validate the comment against the PR description, diff, and code in user_helpers.py. Classify it as Accurate, Partially Accurate, or Inaccurate, then provide brief reasoning and a recommended follow-up action.
+```
+
+### Characteristics of Output
+- Reaches the correct classification (`Inaccurate`) but does not quote the specific lines from the code that support this verdict.
+- Explanation relies on general knowledge of FastAPI rather than the actual lines in the diff.
+- The reasoning contradicts itself, first saying the reviewer's claim is "inaccurate" in the reasoning, then classifying it as "Accurate" in the header, suggesting the LLM was not anchored to the code.
+- Recommended follow-up is vague: "add tests for unauthenticated access" is generic advice not tied to the specific claim.
+
+### Why This Is Weak
+Without being instructed to ground the verdict in specific lines, the LLM reasoned from general FastAPI knowledge rather than the actual code. This produced a self-contradicting output, the classification and reasoning disagreed which is exactly the failure mode the guideline is designed to prevent. A student relying on this output would be unsure whether to trust the verdict.
+
+## Good Example
+
+### Prompt Used
+```
+I am validating a peer review comment against a pull request. Here is the diff, PR description, and the relevant code. [diff] [PR_description] [location to user_helpers.py] The peer reviewer made the following claim: "Although each route declares Depends(auth.get_current_user), the returned value is assigned to _ and discarded, which means authentication is effectively not enforced." Before accepting or rejecting this claim: 1. Quote the exact line(s) from the code that are relevant to this claim. 2. Explain whether those lines support or contradict the claim, based only on how FastAPI's Depends() mechanism actually works. 3. If you cannot ground your verdict in specific lines, do not include the finding. Classify the comment as Accurate, Partially Accurate, or Inaccurate, then provide brief reasoning and a recommended follow-up action.
+```
+
+### Characteristics of Output
+- Quotes all four relevant lines across the endpoints where `_: dict = Depends(auth.get_current_user)` appears before reaching a verdict.
+- Explains the mechanism precisely: FastAPI executes the dependency regardless of whether the return value is used, so assigning to `_` does not bypass enforcement.
+- Classification (`Inaccurate`) is consistent with the reasoning, no contradiction.
+- Recommended follow-up is concrete and scoped: reject the claim, no code change needed, optionally clarify in comments.
+
+### Why This Is Better
+By requiring the LLM to quote the relevant lines before reaching a verdict, the output is self-consistent and immediately verifiable, a reviewer can check the quoted lines themselves and confirm the reasoning. The naive output reached the same general conclusion but contradicted itself, making it untrustworthy. The guided output is actionable: a reviewer can reject the comment confidently and explain why with specific evidence.
+
+---
+
+## Problem B.4: Correctness and Constraint Fit
+
+**Model to Use:** GPT-4.1
+
+## Evaluation Description
+
+The review should:
+- Begin with a structured context summary: PR intent, affected components, and high-risk areas.
+- List findings with severity (`Blocker`, `Major`, `Minor`, `Question`), impacted file(s), violated requirement or constraint, and a minimal fix.
+- Not repeat security or test findings already covered in B1 and B2.
+- End with a justified merge decision (`Approve`, `Request Changes`, or `Reject`) based on the findings.
+
+---
+
+## Bad Example
+
+### Prompt Used
+```
+Review functional correctness and PR-constraint alignment. List findings with severity 
+(Blocker, Major, Minor, Question) and include: impacted file(s), violated requirement constraint, and minimal fix. End with a merge decision based on all prior considerations.
+```
+
+### Characteristics of Output
+- Jumps directly into findings without first establishing what the PR is trying to do or which components are affected.
+- Repeats findings from B1 (internal ID exposure) and B2 (missing edge case tests, brittle assertions) instead of focusing on new correctness and constraint-fit issues.
+- Finding 5 ("Functional Correctness") is not a finding, it states no bugs were found and suggests a vague audit, which adds no actionable value.
+- The merge decision ("Request Changes") is based largely on B1 and B2 findings rather than anything specific to correctness or constraint fit.
+- No findings tied to specific files like `database.py` or `seed.py`, which are the most complex parts of this PR.
+
+### Why This Is Weak
+Without a context summary step, the LLM had no structured understanding of the PR before reviewing it. It defaulted to rehashing prior findings rather than identifying new correctness issues. The most technically complex parts of the diff, the database migration logic and seed normalization, were not examined at all.
+
+## Good Example
+
+### Prompt Used
+```
+I am reviewing a pull request. Below is the diff and PR description. [diff] [PR_description] Step 1 — Context summary: - Summarize the intent of this PR. - Identify the affected components. - Highlight any high-risk or complex areas. Step 2 — Focused review: Review only for functional correctness and PR-constraint alignment. For each finding include: - Severity (Blocker, Major, Minor, or Question) - Impacted file(s) - Violated requirement or constraint from the PR description - Minimal fix Do not repeat security or test findings from prior review passes. End with a merge decision: Approve, Request Changes, or Reject.
+```
+
+### Characteristics of Output
+- Opens with a structured context summary that identifies affected components (including `database.py`, `seed.py`, `main.py`) and flags the migration logic and seed normalization as high-risk areas before any findings are listed.
+- Findings are scoped to new correctness issues not covered in B1/B2: the `created_at` migration default being set to an empty string instead of `CURRENT_TIMESTAMP`, and the missing fallback in `_normalize_user` when both `name` and `full_name` are absent.
+- Does not re-raise security or test concerns from earlier passes.
+- Merge decision ("Request Changes") is justified specifically by the two correctness findings, making it easy to trace back to the evidence.
+
+### Why This Is Better
+The context summary forced the LLM to read and understand the full scope of the PR before issuing findings. This is what surfaced the `database.py` migration bug and the seed normalization gap, both of which require understanding what the PR intends before you can identify where it falls short. The naive prompt skipped this step entirely and missed the most technically substantive issues in the diff.
+
+---
+
 ### Problem C: Pull Request Supply Chain Review
 
 **Good Example:**
