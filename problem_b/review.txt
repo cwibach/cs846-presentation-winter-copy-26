@@ -1,0 +1,10 @@
+Your peer reviewer wangtkuan-crypto raised the following comment:
+Security review summary: all endpoints appear to be in critical danger.
+Although each route declares Depends(auth.get_current_user), the returned
+value is assigned to _ and discarded, which means authentication is
+effectively not enforced. As implemented, every endpoint should be treated
+as unauthenticated and vulnerable to unauthorized access until this is
+fixed.
+and in problem_b/user_helpers.py line 139 - 142:
+Depends(auth.get_current_user) is assigned to _, so the dependency result
+is discarded and auth isn’t actually enforced.

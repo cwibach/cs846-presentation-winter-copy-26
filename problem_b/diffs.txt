@@ -1,0 +1,1094 @@
+From e5432f6e1d5c37b174751eeef031d5a4f9f2e3b3 Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Wed, 4 Mar 2026 22:42:48 -0500
+Subject: [PATCH 1/5] Tests for user helper
+
+---
+ problem_b/tests/conftest.py                   |   6 +-
+ problem_b/tests/test_auth_flow.py             |   3 +
+ problem_b/tests/test_user_helpers_requests.py | 155 ++++++++++++++++++
+ problem_b/tests/user_helpers/conftest.py      | 130 +++++++++++++++
+ problem_b/tests/user_helpers/test_database.py |  96 +++++++++++
+ problem_b/tests/user_helpers/test_lookup.py   |  30 ++++
+ .../tests/user_helpers/test_user_display.py   |  41 +++++
+ .../tests/user_helpers/test_user_header.py    |  38 +++++
+ .../tests/user_helpers/test_user_list.py      |  58 +++++++
+ 9 files changed, 554 insertions(+), 3 deletions(-)
+ create mode 100644 problem_b/tests/test_user_helpers_requests.py
+ create mode 100644 problem_b/tests/user_helpers/conftest.py
+ create mode 100644 problem_b/tests/user_helpers/test_database.py
+ create mode 100644 problem_b/tests/user_helpers/test_lookup.py
+ create mode 100644 problem_b/tests/user_helpers/test_user_display.py
+ create mode 100644 problem_b/tests/user_helpers/test_user_header.py
+ create mode 100644 problem_b/tests/user_helpers/test_user_list.py
+
+diff --git a/problem_b/tests/conftest.py b/problem_b/tests/conftest.py
+index ba91505..cd9ccf2 100644
+--- a/problem_b/tests/conftest.py
++++ b/problem_b/tests/conftest.py
+@@ -9,8 +9,8 @@
+ from main import app
+ 
+ 
+-@pytest.fixture(autouse=True)
+-def _test_env(tmp_path, monkeypatch):
++@pytest.fixture()
++def auth_env(tmp_path, monkeypatch):
+     monkeypatch.setenv("AUTH_DB_PATH", str(tmp_path / "test_auth.db"))
+     monkeypatch.setenv(
+         "AUTH_JWT_SECRET",
+@@ -19,6 +19,6 @@ def _test_env(tmp_path, monkeypatch):
+ 
+ 
+ @pytest.fixture()
+-def client(_test_env):
++def client(auth_env):
+     with TestClient(app) as test_client:
+         yield test_client
+diff --git a/problem_b/tests/test_auth_flow.py b/problem_b/tests/test_auth_flow.py
+index d30a46c..0df854a 100644
+--- a/problem_b/tests/test_auth_flow.py
++++ b/problem_b/tests/test_auth_flow.py
+@@ -4,6 +4,7 @@
+ from datetime import datetime, timedelta, timezone
+ 
+ import jwt
++import pytest
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+ 
+@@ -11,6 +12,8 @@
+ from database import get_db_path, init_db
+ from seed import SEED_USERS, seed_users
+ 
++pytestmark = pytest.mark.usefixtures("auth_env")
++
+ 
+ def test_schema_and_seed_data_created():
+     init_db()
+diff --git a/problem_b/tests/test_user_helpers_requests.py b/problem_b/tests/test_user_helpers_requests.py
+new file mode 100644
+index 0000000..102a33b
+--- /dev/null
++++ b/problem_b/tests/test_user_helpers_requests.py
+@@ -0,0 +1,155 @@
++import pytest
++
++import user_helpers as user_helpers
++
++
++class DummyResponse:
++    def __init__(self, json_data, status_code=200):
++        self._json_data = json_data
++        self.status_code = status_code
++
++    def json(self):
++        return self._json_data
++
++
++def make_requests_mock(monkeypatch, expected_calls):
++    """
++    Simple requests.get mock:
++    - expected_calls: list of (url, response) tuples in the order they should be called.
++    """
++    calls = {"urls": []}
++
++    def fake_get(url, *args, **kwargs):
++        calls["urls"].append((url, kwargs))
++        if not expected_calls:
++            raise AssertionError(f"Unexpected call to requests.get({url!r})")
++        exp_url, resp = expected_calls.pop(0)
++        assert url == exp_url, f"Expected URL {exp_url!r}, got {url!r}"
++        return resp
++
++    monkeypatch.setattr(user_helpers, "requests", type("R", (), {"get": fake_get}))
++    return calls
++
++
++def test_get_user_display_happy_path(monkeypatch):
++    """Backend helper returns (name, email) for a valid user."""
++    expected = DummyResponse({"id": 123, "name": "Jane Doe", "email": "jane@example.com"})
++    make_requests_mock(
++        monkeypatch,
++        [
++            (
++                "https://api.example.com/users/123",
++                expected,
++            )
++        ],
++    )
++
++    name, email = user_helpers.get_user_display(123)
++
++    assert name == "Jane Doe"
++    assert email == "jane@example.com"
++
++
++def test_get_user_list_filters_role_and_hides_internal_id(monkeypatch):
++    """
++    Backend should:
++    - Call /users?role=admin when role='admin'.
++    - Not expose internal IDs to the frontend (the test asserts we can easily change the shape
++      later; for now it documents that 'id' is considered sensitive for UI exposure).
++    """
++    resp = DummyResponse(
++        [
++            {"id": "internal-1", "name": "Jane", "email": "jane@example.com", "role": "admin"},
++            {"id": "internal-2", "name": "Bob", "email": "bob@example.com", "role": "admin"},
++        ]
++    )
++    calls = make_requests_mock(
++        monkeypatch,
++        [
++            (
++                "https://api.example.com/users?role=admin",
++                resp,
++            )
++        ],
++    )
++
++    users = user_helpers.get_user_list(role="admin")
++
++    # URL shape
++    assert calls["urls"][0][0].endswith("?role=admin")
++    # Role filter applied (backend behavior)
++    assert all(u["role"] == "admin" for u in users)
++    # This test documents the current (problematic) behavior of exposing 'id' so reviewers
++    # can discuss how to adapt it for the frontend safely.
++    assert all("id" in u for u in users)
++
++
++def test_format_user_for_header_avoids_extra_calls(monkeypatch):
++    """
++    In an ideal backend design, we would not make redundant calls in the hot path.
++    This test currently documents that we perform:
++    - One call to fetch the user.
++    - One call to fetch the list.
++    Reviewers should propose better patterns (e.g., reuse list data, caching).
++    """
++    # First call: single user
++    user_resp = DummyResponse({"id": 1, "name": "Jane Doe", "email": "jane@example.com", "role": "admin"})
++    # Second call: list
++    list_resp = DummyResponse(
++        [
++            {"id": 1, "name": "Jane Doe", "email": "jane@example.com", "role": "admin"},
++            {"id": 2, "name": "Bob", "email": "bob@example.com", "role": "user"},
++        ]
++    )
++    calls = make_requests_mock(
++        monkeypatch,
++        [
++            ("https://api.example.com/users/1", user_resp),
++            ("https://api.example.com/users", list_resp),
++        ],
++    )
++
++    header = user_helpers.format_user_for_header(1)
++
++    assert header == "Jane Doe (admin)"
++    assert len(calls["urls"]) == 2  # document current hot-path behavior for review
++
++
++def test_lookup_by_email_backend_only_usage(monkeypatch):
++    """
++    lookup_by_email is used by an internal support tool, not exposed to the frontend.
++    We still want it to behave sensibly and not leak unnecessary data in its return type.
++    """
++    resp = DummyResponse(
++        [
++            {"id": "internal-1", "name": "Jane", "email": "jane@example.com", "role": "admin"},
++            {"id": "internal-2", "name": "Bob", "email": "bob@example.com", "role": "user"},
++        ]
++    )
++    make_requests_mock(
++        monkeypatch,
++        [
++            ("https://api.example.com/users", resp),
++        ],
++    )
++
++    user_id = user_helpers.lookup_by_email("jane@example.com")
++    missing = user_helpers.lookup_by_email("nope@example.com")
++
++    assert user_id == "internal-1"
++    assert missing is None
++
++
++@pytest.mark.skip(
++    reason="Timeout and error-handling behavior not implemented yet; kept as a discussion hook for review."
++)
++def test_get_user_display_handles_timeout_and_malformed(monkeypatch):
++    """
++    This test encodes *intended* backend behavior that is not implemented yet:
++    - Use a 2s timeout.
++    - Fail gracefully on timeouts / malformed JSON.
++
++    The skip marker keeps the test discoverable without breaking the exercise.
++    """
++    # This test body can be extended by students as part of the exercise.
++    pass
+diff --git a/problem_b/tests/user_helpers/conftest.py b/problem_b/tests/user_helpers/conftest.py
+new file mode 100644
+index 0000000..b45634f
+--- /dev/null
++++ b/problem_b/tests/user_helpers/conftest.py
+@@ -0,0 +1,130 @@
++"""
++Shared pytest fixtures for the user_helpers backend tests.
++
++Creates an isolated, in-memory SQLite database for every test so that
++tests never touch the production `users.db` file and never leak state
++between each other.
++"""
++
++import sys
++import os
++import sqlite3
++
++import pytest
++
++# Make sure `database` and `user_helpers` can be imported from project root
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
++
++import auth  # noqa: E402  (after path manipulation)
++import database  # noqa: E402  (after path manipulation)
++from user_helpers import app  # noqa: E402
++
++from fastapi.testclient import TestClient
++
++
++# ── helpers ───────────────────────────────────────────────────────────────────
++
++SCHEMA_SQL = """
++CREATE TABLE IF NOT EXISTS users (
++    id       INTEGER PRIMARY KEY AUTOINCREMENT,
++    name     TEXT    NOT NULL,
++    full_name TEXT   NOT NULL,
++    email    TEXT    NOT NULL UNIQUE,
++    password_hash TEXT NOT NULL DEFAULT '',
++    role     TEXT    NOT NULL DEFAULT 'user'
++);
++"""
++
++SEED_ROWS = [
++    ("Jane Doe", "Jane Doe", "jane.doe@example.com", "", "admin"),
++    ("John Smith", "John Smith", "john.smith@example.com", "", "user"),
++    ("Alice Wong", "Alice Wong", "alice.wong@example.com", "", "support"),
++    ("Bob Martin", "Bob Martin", "bob.martin@example.com", "", "user"),
++]
++
++
++class _UnclosableConnection:
++    """
++    Thin wrapper around a real sqlite3.Connection that ignores .close()
++    so the shared in-memory DB survives endpoint code that calls conn.close().
++    """
++
++    def __init__(self, real_conn: sqlite3.Connection):
++        self._conn = real_conn
++
++    def __getattr__(self, name):
++        return getattr(self._conn, name)
++
++    def close(self):  # noqa: D401
++        """No-op – prevent endpoints from closing the shared test connection."""
++        pass
++
++    def really_close(self):
++        self._conn.close()
++
++
++def _create_test_db() -> _UnclosableConnection:
++    """Return an in-memory SQLite connection seeded with test data."""
++    conn = sqlite3.connect(":memory:", check_same_thread=False)
++    conn.row_factory = sqlite3.Row
++    conn.execute(SCHEMA_SQL)
++    conn.executemany(
++        """
++        INSERT INTO users (name, full_name, email, password_hash, role)
++        VALUES (?, ?, ?, ?, ?)
++        """,
++        SEED_ROWS,
++    )
++    conn.commit()
++    return _UnclosableConnection(conn)
++
++
++# ── fixtures ──────────────────────────────────────────────────────────────────
++
++@pytest.fixture(autouse=True)
++def _patch_db(monkeypatch):
++    """
++    Monkey-patch `database.get_db_connection` so every call inside the
++    FastAPI app returns a cursor on the same in-memory DB.
++    """
++    test_conn = _create_test_db()
++
++    def _get_conn():
++        return test_conn
++
++    monkeypatch.setattr(database, "get_db_connection", _get_conn)
++    monkeypatch.setattr(auth, "get_db_connection", _get_conn)
++    monkeypatch.setenv("AUTH_JWT_SECRET", "test-secret-key-at-least-32-bytes-long")
++    yield
++    test_conn.really_close()
++
++
++@pytest.fixture()
++def admin_auth_header():
++    token = auth.create_access_token(user_id=1, email="jane.doe@example.com")
++    return {"Authorization": f"Bearer {token}"}
++
++
++@pytest.fixture()
++def user_auth_header():
++    token = auth.create_access_token(user_id=2, email="john.smith@example.com")
++    return {"Authorization": f"Bearer {token}"}
++
++
++@pytest.fixture()
++def client(admin_auth_header):
++    """FastAPI TestClient wired to the patched database with admin auth."""
++    with TestClient(app, headers=admin_auth_header) as test_client:
++        yield test_client
++
++
++@pytest.fixture()
++def unauthenticated_client():
++    with TestClient(app) as test_client:
++        yield test_client
++
++
++@pytest.fixture()
++def user_client(user_auth_header):
++    with TestClient(app, headers=user_auth_header) as test_client:
++        yield test_client
+diff --git a/problem_b/tests/user_helpers/test_database.py b/problem_b/tests/user_helpers/test_database.py
+new file mode 100644
+index 0000000..ab58495
+--- /dev/null
++++ b/problem_b/tests/user_helpers/test_database.py
+@@ -0,0 +1,96 @@
++"""
++Tests for the database module (database.py) and seed script (seed.py).
++
++These tests use tmp_path for a real file-based SQLite DB and override
++the autouse _patch_db fixture so they test actual init_db / seed logic.
++"""
++
++import sqlite3
++import os
++import sys
++
++import pytest
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
++
++import database
++from seed import seed_users, SEED_USERS
++
++
++class TestInitDb:
++    """database.init_db() schema creation."""
++
++    @pytest.fixture(autouse=True)
++    def _patch_db(self):
++        """Override the conftest autouse fixture – do nothing."""
++        yield
++
++    def test_creates_users_table(self, tmp_path, monkeypatch):
++        db_path = str(tmp_path / "test.db")
++        monkeypatch.setattr(database, "DB_PATH", db_path)
++
++        database.init_db()
++
++        conn = sqlite3.connect(db_path)
++        cur = conn.execute(
++            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
++        )
++        assert cur.fetchone() is not None
++        conn.close()
++
++    def test_idempotent(self, tmp_path, monkeypatch):
++        db_path = str(tmp_path / "test.db")
++        monkeypatch.setattr(database, "DB_PATH", db_path)
++
++        database.init_db()
++        database.init_db()  # should not raise
++
++
++class TestGetDbConnection:
++    """database.get_db_connection() returns a usable connection."""
++
++    @pytest.fixture(autouse=True)
++    def _patch_db(self):
++        """Override the conftest autouse fixture – do nothing."""
++        yield
++
++    def test_row_factory_set(self, tmp_path, monkeypatch):
++        db_path = str(tmp_path / "test.db")
++        monkeypatch.setattr(database, "DB_PATH", db_path)
++        database.init_db()
++
++        conn = database.get_db_connection()
++        assert conn.row_factory is sqlite3.Row
++        conn.close()
++
++
++class TestSeedScript:
++    """seed.py populates the database correctly."""
++
++    @pytest.fixture(autouse=True)
++    def _patch_db(self):
++        """Override the conftest autouse fixture – do nothing."""
++        yield
++
++    def test_inserts_all_seed_users(self, tmp_path, monkeypatch):
++        db_path = str(tmp_path / "test.db")
++        monkeypatch.setattr(database, "DB_PATH", db_path)
++
++        seed_users()
++
++        conn = sqlite3.connect(db_path)
++        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
++        conn.close()
++        assert count == len(SEED_USERS)
++
++    def test_idempotent_no_duplicates(self, tmp_path, monkeypatch):
++        db_path = str(tmp_path / "test.db")
++        monkeypatch.setattr(database, "DB_PATH", db_path)
++
++        seed_users()
++        seed_users()  # run again
++
++        conn = sqlite3.connect(db_path)
++        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
++        conn.close()
++        assert count == len(SEED_USERS)
+diff --git a/problem_b/tests/user_helpers/test_lookup.py b/problem_b/tests/user_helpers/test_lookup.py
+new file mode 100644
+index 0000000..d5b458f
+--- /dev/null
++++ b/problem_b/tests/user_helpers/test_lookup.py
+@@ -0,0 +1,30 @@
++"""
++Tests for GET /users/lookup?email=...
++"""
++
++
++class TestLookupByEmail:
++    """Endpoint: GET /users/lookup"""
++
++    def test_returns_user_id_for_known_email(self, client):
++        resp = client.get("/users/lookup", params={"email": "jane.doe@example.com"})
++        assert resp.status_code == 200
++        assert resp.json()["user_id"] == 1
++
++    def test_returns_correct_id_for_another_user(self, client):
++        resp = client.get(
++            "/users/lookup", params={"email": "alice.wong@example.com"}
++        )
++        assert resp.status_code == 200
++        assert resp.json()["user_id"] == 3
++
++    def test_returns_null_for_unknown_email(self, client):
++        resp = client.get(
++            "/users/lookup", params={"email": "nobody@example.com"}
++        )
++        assert resp.status_code == 200
++        assert resp.json()["user_id"] is None
++
++    def test_missing_email_param_returns_422(self, client):
++        resp = client.get("/users/lookup")
++        assert resp.status_code == 422  # FastAPI validation error
+diff --git a/problem_b/tests/user_helpers/test_user_display.py b/problem_b/tests/user_helpers/test_user_display.py
+new file mode 100644
+index 0000000..1a2c65c
+--- /dev/null
++++ b/problem_b/tests/user_helpers/test_user_display.py
+@@ -0,0 +1,41 @@
++"""
++Tests for GET /users/{user_id}/display
++"""
++
++
++class TestGetUserDisplay:
++    """Endpoint: GET /users/{user_id}/display"""
++
++    def test_requires_bearer_token(self, unauthenticated_client):
++        resp = unauthenticated_client.get("/users/1/display")
++        assert resp.status_code == 401
++
++    def test_returns_name_and_email_for_valid_user(self, client):
++        resp = client.get("/users/1/display")
++        assert resp.status_code == 200
++        body = resp.json()
++        assert body["name"] == "Jane Doe"
++        assert body["email"] == "jane.doe@example.com"
++
++    def test_returns_second_user(self, client):
++        resp = client.get("/users/2/display")
++        assert resp.status_code == 200
++        body = resp.json()
++        assert body["name"] == "John Smith"
++        assert body["email"] == "john.smith@example.com"
++
++    def test_404_for_nonexistent_user(self, client):
++        resp = client.get("/users/9999/display")
++        assert resp.status_code == 404
++        assert resp.json()["detail"] == "User not found"
++
++    def test_response_has_no_id_field(self, client):
++        """Ensure internal IDs are not leaked via this endpoint."""
++        resp = client.get("/users/1/display")
++        body = resp.json()
++        assert "id" not in body
++
++    def test_response_has_no_role_field(self, client):
++        resp = client.get("/users/1/display")
++        body = resp.json()
++        assert "role" not in body
+diff --git a/problem_b/tests/user_helpers/test_user_header.py b/problem_b/tests/user_helpers/test_user_header.py
+new file mode 100644
+index 0000000..4e29bd9
+--- /dev/null
++++ b/problem_b/tests/user_helpers/test_user_header.py
+@@ -0,0 +1,38 @@
++"""
++Tests for GET /users/{user_id}/header
++"""
++
++
++class TestFormatUserForHeader:
++    """Endpoint: GET /users/{user_id}/header"""
++
++    def test_admin_shows_role_in_parentheses(self, client):
++        resp = client.get("/users/1/header")
++        assert resp.status_code == 200
++        assert resp.json()["display"] == "Jane Doe (admin)"
++
++    def test_support_shows_role_in_parentheses(self, client):
++        resp = client.get("/users/3/header")
++        assert resp.status_code == 200
++        assert resp.json()["display"] == "Alice Wong (support)"
++
++    def test_regular_user_shows_name_only(self, client):
++        resp = client.get("/users/2/header")
++        assert resp.status_code == 200
++        assert resp.json()["display"] == "John Smith"
++
++    def test_another_regular_user(self, client):
++        resp = client.get("/users/4/header")
++        assert resp.status_code == 200
++        assert resp.json()["display"] == "Bob Martin"
++
++    def test_404_for_nonexistent_user(self, client):
++        resp = client.get("/users/9999/header")
++        assert resp.status_code == 404
++        assert resp.json()["detail"] == "User not found"
++
++    def test_response_shape(self, client):
++        resp = client.get("/users/1/header")
++        body = resp.json()
++        assert "display" in body
++        assert isinstance(body["display"], str)
+diff --git a/problem_b/tests/user_helpers/test_user_list.py b/problem_b/tests/user_helpers/test_user_list.py
+new file mode 100644
+index 0000000..5e8e33b
+--- /dev/null
++++ b/problem_b/tests/user_helpers/test_user_list.py
+@@ -0,0 +1,58 @@
++"""
++Tests for GET /users  (user list, with optional role filter)
++"""
++
++
++class TestGetUserList:
++    """Endpoint: GET /users"""
++
++    def test_requires_bearer_token(self, unauthenticated_client):
++        resp = unauthenticated_client.get("/users")
++        assert resp.status_code == 401
++
++    def test_returns_all_seeded_users(self, client):
++        resp = client.get("/users")
++        assert resp.status_code == 200
++        data = resp.json()
++        assert len(data) == 4  # 4 seed rows in conftest
++
++    def test_each_user_has_required_fields(self, client):
++        resp = client.get("/users")
++        for u in resp.json():
++            assert "id" in u
++            assert "name" in u
++            assert "email" in u
++            assert "role" in u
++
++    def test_filter_by_admin_role(self, client):
++        resp = client.get("/users", params={"role": "admin"})
++        assert resp.status_code == 200
++        data = resp.json()
++        assert len(data) == 1
++        assert data[0]["name"] == "Jane Doe"
++        assert data[0]["role"] == "admin"
++
++    def test_filter_by_support_role(self, client):
++        resp = client.get("/users", params={"role": "support"})
++        assert resp.status_code == 200
++        data = resp.json()
++        assert len(data) == 1
++        assert data[0]["name"] == "Alice Wong"
++
++    def test_filter_by_user_role(self, client):
++        resp = client.get("/users", params={"role": "user"})
++        assert resp.status_code == 200
++        data = resp.json()
++        assert len(data) == 2
++        names = {u["name"] for u in data}
++        assert names == {"John Smith", "Bob Martin"}
++
++    def test_filter_nonexistent_role_returns_empty(self, client):
++        resp = client.get("/users", params={"role": "nonexistent"})
++        assert resp.status_code == 200
++        assert resp.json() == []
++
++    def test_no_filter_returns_all(self, client):
++        resp = client.get("/users")
++        assert resp.status_code == 200
++        assert len(resp.json()) == 4
+
+From 97bc1edc0c6c34a82f56b8bb03971d0a66d56ae9 Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Wed, 4 Mar 2026 22:43:10 -0500
+Subject: [PATCH 2/5] database seed data and helper
+
+---
+ problem_b/database.py | 74 ++++++++++++++++++++++++++++++++++---------
+ problem_b/seed.py     | 43 +++++++++++++++++++++++--
+ 2 files changed, 99 insertions(+), 18 deletions(-)
+
+diff --git a/problem_b/database.py b/problem_b/database.py
+index 70b0251..e853e9d 100644
+--- a/problem_b/database.py
++++ b/problem_b/database.py
+@@ -1,38 +1,82 @@
+ """
+-SQLite database setup and connection helpers for the auth service.
++SQLite database connection and schema setup for user helpers + auth service.
+ """
+ 
+ import os
+ import sqlite3
+ 
+-DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "auth.db")
++DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
+ 
+ 
+ def get_db_path() -> str:
+-    return os.getenv("AUTH_DB_PATH", DEFAULT_DB_PATH)
++    return os.getenv("AUTH_DB_PATH", DB_PATH)
+ 
+ 
+ def get_db_connection() -> sqlite3.Connection:
++    """Return a connection with row-factory enabled."""
+     conn = sqlite3.connect(get_db_path())
+     conn.row_factory = sqlite3.Row
+     return conn
+ 
+ 
++def _ensure_schema(conn: sqlite3.Connection) -> None:
++    conn.execute(
++        """
++        CREATE TABLE IF NOT EXISTS users (
++            id INTEGER PRIMARY KEY AUTOINCREMENT,
++            name TEXT,
++            full_name TEXT NOT NULL,
++            email TEXT NOT NULL UNIQUE,
++            password_hash TEXT NOT NULL DEFAULT '',
++            role TEXT NOT NULL DEFAULT 'user',
++            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
++        );
++        """
++    )
++
++    columns = {
++        row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()
++    }
++
++    if "name" not in columns:
++        conn.execute("ALTER TABLE users ADD COLUMN name TEXT")
++    if "full_name" not in columns:
++        conn.execute("ALTER TABLE users ADD COLUMN full_name TEXT NOT NULL DEFAULT ''")
++    if "password_hash" not in columns:
++        conn.execute(
++            "ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''"
++        )
++    if "role" not in columns:
++        conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
++    if "created_at" not in columns:
++        conn.execute(
++            "ALTER TABLE users ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
++        )
++
++    conn.execute(
++        """
++        UPDATE users
++        SET full_name = COALESCE(NULLIF(full_name, ''), name, email)
++        """
++    )
++    conn.execute(
++        """
++        UPDATE users
++        SET name = COALESCE(NULLIF(name, ''), full_name)
++        """
++    )
++
++
+ def init_db() -> None:
++    """Create or migrate the users table schema."""
+     conn = get_db_connection()
+     try:
+-        conn.execute(
+-            """
+-            CREATE TABLE IF NOT EXISTS users (
+-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+-                email TEXT NOT NULL UNIQUE,
+-                password_hash TEXT NOT NULL,
+-                full_name TEXT NOT NULL,
+-                role TEXT NOT NULL DEFAULT 'user',
+-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+-            );
+-            """
+-        )
++        _ensure_schema(conn)
+         conn.commit()
+     finally:
+         conn.close()
++
++
++if __name__ == "__main__":
++    init_db()
++    print(f"Database initialised at {get_db_path()}")
+diff --git a/problem_b/seed.py b/problem_b/seed.py
+index 6065739..80e2c82 100644
+--- a/problem_b/seed.py
++++ b/problem_b/seed.py
+@@ -25,9 +25,44 @@
+         "full_name": "Regular User",
+         "role": "user",
+     },
++    {"name": "Jane Doe", "email": "jane.doe@example.com", "role": "admin"},
++    {"name": "John Smith", "email": "john.smith@example.com", "role": "user"},
++    {"name": "Alice Wong", "email": "alice.wong@example.com", "role": "support"},
++    {"name": "Bob Martin", "email": "bob.martin@example.com", "role": "user"},
++    {
++        "name": "Carlos Rivera",
++        "email": "carlos.rivera@example.com",
++        "role": "admin",
++    },
++    {
++        "name": "Diana Patel",
++        "email": "diana.patel@example.com",
++        "role": "support",
++    },
++    {"name": "Eve Torres", "email": "eve.torres@example.com", "role": "user"},
++    {"name": "Frank Lee", "email": "frank.lee@example.com", "role": "user"},
++    {"name": "Grace Kim", "email": "grace.kim@example.com", "role": "admin"},
++    {"name": "Hiro Tanaka", "email": "hiro.tanaka@example.com", "role": "user"},
+ ]
+ 
+ 
++def _default_password(email: str) -> str:
++    local_part = email.split("@", 1)[0]
++    return f"{local_part}-pass-123"
++
++
++def _normalize_user(raw: dict) -> dict:
++    full_name = raw.get("full_name") or raw.get("name") or raw["email"]
++    name = raw.get("name") or full_name
++    return {
++        "email": raw["email"],
++        "password": raw.get("password") or _default_password(raw["email"]),
++        "full_name": full_name,
++        "name": name,
++        "role": raw.get("role", "user"),
++    }
++
++
+ def seed_users() -> int:
+     init_db()
+     hasher = PasswordHasher()
+@@ -38,19 +73,21 @@ def seed_users() -> int:
+             row["email"] for row in conn.execute("SELECT email FROM users").fetchall()
+         }
+ 
+-        for user in SEED_USERS:
++        for raw_user in SEED_USERS:
++            user = _normalize_user(raw_user)
+             if user["email"] in existing_emails:
+                 continue
+ 
+             conn.execute(
+                 """
+-                INSERT INTO users (email, password_hash, full_name, role)
+-                VALUES (?, ?, ?, ?)
++                INSERT INTO users (email, password_hash, full_name, name, role)
++                VALUES (?, ?, ?, ?, ?)
+                 """,
+                 (
+                     user["email"],
+                     hasher.hash(user["password"]),
+                     user["full_name"],
++                    user["name"],
+                     user["role"],
+                 ),
+             )
+
+From 9fed08a741d9f6238eeb6f39e22fa091a5181ab2 Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Wed, 4 Mar 2026 22:43:21 -0500
+Subject: [PATCH 3/5] main user_helper module
+
+---
+ problem_b/user_helpers.py | 182 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 182 insertions(+)
+ create mode 100644 problem_b/user_helpers.py
+
+diff --git a/problem_b/user_helpers.py b/problem_b/user_helpers.py
+new file mode 100644
+index 0000000..c934472
+--- /dev/null
++++ b/problem_b/user_helpers.py
+@@ -0,0 +1,182 @@
++"""
++User helper routes and request-based helper functions.
++"""
++
++import os
++from typing import Optional
++
++import requests
++import uvicorn
++from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
++from pydantic import BaseModel
++
++import auth
++import database
++
++API_BASE_URL = os.getenv("USER_HELPERS_API_BASE_URL", "https://api.example.com")
++router = APIRouter(tags=["user-helpers"])
++_lookup_cache = None
++
++
++class UserOut(BaseModel):
++    id: int
++    name: str
++    email: str
++    role: str
++
++
++class UserDisplayOut(BaseModel):
++    name: str
++    email: str
++
++
++class HeaderOut(BaseModel):
++    display: str
++
++
++class LookupOut(BaseModel):
++    user_id: Optional[int] = None
++
++
++def get_user_display(user_id: int):
++    resp = requests.get(f"{API_BASE_URL}/users/{user_id}")
++    data = resp.json()
++    return data["name"], data["email"]
++
++
++def get_user_list(role: Optional[str] = None):
++    url = f"{API_BASE_URL}/users"
++    if role:
++        url = f"{url}?role={role}"
++    resp = requests.get(url)
++    return resp.json()
++
++
++def format_user_for_header(user_id: int):
++    resp = requests.get(f"{API_BASE_URL}/users/{user_id}")
++    user = resp.json()
++    users = requests.get(f"{API_BASE_URL}/users").json()
++
++    role = user.get("role")
++    for candidate in users:
++        if candidate.get("id") == user_id:
++            role = candidate.get("role", role)
++            break
++
++    if role and role != "user":
++        return f"{user['name']} ({role})"
++    return user["name"]
++
++
++def lookup_by_email(email: str):
++    global _lookup_cache
++    try:
++        if _lookup_cache is None:
++            _lookup_cache = requests.get(f"{API_BASE_URL}/users").json()
++        users = _lookup_cache
++        for user in users:
++            if user.get("email") == email:
++                return user.get("id")
++        return None
++    except Exception:
++        return None
++
++
++@router.get("/users/{user_id}/display", response_model=UserDisplayOut)
++def get_user_display_endpoint(
++    user_id: int, _: dict = Depends(auth.get_current_user)
++):
++    conn = database.get_db_connection()
++    try:
++        row = conn.execute(
++            """
++            SELECT name, email
++            FROM users
++            WHERE id = ?
++            """,
++            (user_id,),
++        ).fetchone()
++    finally:
++        conn.close()
++
++    if not row:
++        raise HTTPException(status_code=404, detail="User not found")
++
++    return UserDisplayOut(name=row["name"], email=row["email"])
++
++
++@router.get("/users", response_model=list[UserOut])
++def get_user_list_endpoint(
++    role: Optional[str] = Query(default=None),
++    _: dict = Depends(auth.get_current_user),
++):
++    conn = database.get_db_connection()
++    try:
++        if role:
++            rows = conn.execute(
++                """
++                SELECT id, name, email, role
++                FROM users
++                WHERE role = ?
++                """,
++                (role,),
++            ).fetchall()
++        else:
++            rows = conn.execute(
++                """
++                SELECT id, name, email, role
++                FROM users
++                """
++            ).fetchall()
++    finally:
++        conn.close()
++
++    return [
++        UserOut(id=r["id"], name=r["name"], email=r["email"], role=r["role"])
++        for r in rows
++    ]
++
++
++@router.get("/users/{user_id}/header", response_model=HeaderOut)
++def format_user_for_header_endpoint(
++    user_id: int, _: dict = Depends(auth.get_current_user)
++):
++    conn = database.get_db_connection()
++    try:
++        row = conn.execute(
++            """
++            SELECT name, role
++            FROM users
++            WHERE id = ?
++            """,
++            (user_id,),
++        ).fetchone()
++    finally:
++        conn.close()
++
++    if not row:
++        raise HTTPException(status_code=404, detail="User not found")
++
++    if row["role"] and row["role"] != "user":
++        return HeaderOut(display=f"{row['name']} ({row['role']})")
++    return HeaderOut(display=row["name"])
++
++
++@router.get("/users/lookup", response_model=LookupOut)
++def lookup_by_email_endpoint(
++    email: str = Query(...), _: dict = Depends(auth.get_current_user)
++):
++    conn = database.get_db_connection()
++    row = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
++
++    if not row:
++        return LookupOut(user_id=None)
++    return LookupOut(user_id=row["id"])
++
++
++app = FastAPI(title="User Helpers API", version="1.0.0")
++app.include_router(router)
++
++
++if __name__ == "__main__":
++    uvicorn.run("user_helpers:app", host="0.0.0.0", port=5000, reload=True)
+
+From 4f0f28e74d3116c622cdf3676fc9bb83157ffca2 Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Wed, 4 Mar 2026 22:43:30 -0500
+Subject: [PATCH 4/5] WIred it to main.py
+
+---
+ problem_b/main.py | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/problem_b/main.py b/problem_b/main.py
+index a91c988..9573e1c 100644
+--- a/problem_b/main.py
++++ b/problem_b/main.py
+@@ -9,6 +9,7 @@
+ from pydantic import BaseModel
+ 
+ import auth
++import user_helpers
+ from database import get_db_connection, init_db
+ from seed import seed_users
+ 
+@@ -21,6 +22,7 @@ async def lifespan(_: FastAPI):
+ 
+ 
+ app = FastAPI(title="Auth Service", version="1.0.0", lifespan=lifespan)
++app.include_router(user_helpers.router)
+ 
+ 
+ class LoginRequest(BaseModel):
+
+From cda490e1c75c977e54f58122e28609dd0b27c781 Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Wed, 4 Mar 2026 22:43:38 -0500
+Subject: [PATCH 5/5] dependency version
+
+---
+ problem_b/requirements.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/problem_b/requirements.txt b/problem_b/requirements.txt
+index 6c6afa4..d5477ce 100644
+--- a/problem_b/requirements.txt
++++ b/problem_b/requirements.txt
+@@ -4,4 +4,5 @@ httpx==0.28.1
+ PyJWT==2.10.1
+ pytest==8.4.2
+ pytest-cov==7.0.0
++requests==2.32.5
+ uvicorn==0.35.0
