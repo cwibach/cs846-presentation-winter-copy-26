@@ -1,0 +1,363 @@
+From b353f0cc49db3c544a81b0166fb56209eb821d74 Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Sat, 28 Feb 2026 19:47:10 -0500
+Subject: [PATCH 1/4] Frontend audit panel
+
+---
+ problem_d/problem_d_frontend/src/main.ts    | 50 ++++++++++++++++++++-
+ problem_d/problem_d_frontend/src/styles.css |  4 ++
+ 2 files changed, 53 insertions(+), 1 deletion(-)
+
+diff --git a/problem_d/problem_d_frontend/src/main.ts b/problem_d/problem_d_frontend/src/main.ts
+index c3ac29a..2b06cb6 100644
+--- a/problem_d/problem_d_frontend/src/main.ts
++++ b/problem_d/problem_d_frontend/src/main.ts
+@@ -180,6 +180,17 @@ app.innerHTML = `
+             <p class="muted">Loading invoices...</p>
+           </div>
+         </div>
++        <div class="dashboard-card">
++          <div class="card-header">
++            <h3>Audit log</h3>
++            <span class="pill warning">Audited</span>
++          </div>
++          <div id="audit-list" class="card-list">
++            <p class="muted">Loading audit log...</p>
++          </div>
++          <button id="audit-btn" class="button ghost">Audit</button>
++          <p id="simulate-status" class="muted"></p>
++        </div>
+       </div>
+     </section>
+ 
+@@ -302,6 +313,7 @@ type Project = {
+   updatedAt: string;
+ };
+ type Invoice = { id: string; amount: number; status: string; issuedAt: string };
++type AuditEntry = { id: string; event: string; createdAt: string };
+ 
+ const renderList = (id: string, items: string[]) => {
+   const node = document.getElementById(id);
+@@ -313,10 +325,11 @@ const renderList = (id: string, items: string[]) => {
+ 
+ const loadDashboard = async () => {
+   try {
+-    const [orgRes, projectRes, invoiceRes] = await Promise.all([
++    const [orgRes, projectRes, invoiceRes, auditRes] = await Promise.all([
+       fetch('/api/organizations'),
+       fetch('/api/projects'),
+       fetch('/api/billing/invoices'),
++      fetch('/api/usage/audit-log'),
+     ]);
+ 
+     if (orgRes.ok) {
+@@ -350,9 +363,44 @@ const loadDashboard = async () => {
+         )
+       );
+     }
++
++    if (auditRes.ok) {
++      const entries: AuditEntry[] = await auditRes.json();
++      renderList(
++        'audit-list',
++        entries.map(
++          (entry) => `${entry.event} · ${new Date(entry.createdAt).toLocaleString()}`
++        )
++      );
++    }
+   } catch {
+     // Non-blocking: keep placeholders if API is unavailable.
+   }
+ };
+ 
+ loadDashboard();
++
++const auditButton = document.getElementById('audit-btn');
++const auditStatus = document.getElementById('simulate-status');
++
++auditButton?.addEventListener('click', async () => {
++  if (!auditStatus) {
++    return;
++  }
++  auditStatus.textContent = 'Triggering audit event...';
++  try {
++    const res = await fetch('/api/usage/audit', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ message: 'Audit event triggered.' }),
++    });
++    if (!res.ok) {
++      auditStatus.textContent = 'Failed to trigger audit event.';
++      return;
++    }
++    auditStatus.textContent = 'Audit event recorded in audit log.';
++    loadDashboard();
++  } catch {
++    auditStatus.textContent = 'Backend unavailable.';
++  }
++});
+diff --git a/problem_d/problem_d_frontend/src/styles.css b/problem_d/problem_d_frontend/src/styles.css
+index 592b658..d6d691f 100644
+--- a/problem_d/problem_d_frontend/src/styles.css
++++ b/problem_d/problem_d_frontend/src/styles.css
+@@ -259,6 +259,10 @@ a {
+   box-shadow: 0 12px 24px rgba(27, 27, 27, 0.08);
+ }
+ 
++.dashboard-card .button {
++  align-self: flex-start;
++}
++
+ .card-header {
+   display: flex;
+   align-items: center;
+
+From 899c65b7257fcad67c9c5b9469654ef6331e5080 Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Sat, 28 Feb 2026 19:47:29 -0500
+Subject: [PATCH 2/4] Vendor provided executable
+
+---
+ .../problem_d_backend/src/vendor/audit_writer   | Bin 0 -> 34880 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+ create mode 100755 problem_d/problem_d_backend/src/vendor/audit_writer
+
+diff --git a/problem_d/problem_d_backend/src/vendor/audit_writer b/problem_d/problem_d_backend/src/vendor/audit_writer
+new file mode 100755
+index 0000000000000000000000000000000000000000..fd5dbef7917469d3bdb67d9a58f2829939165229
+GIT binary patch
+literal 34880
+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
+
+literal 0
+HcmV?d00001
+
+
+From 80f0b09c37f4c13eb472fe748f892473872e684b Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Sat, 28 Feb 2026 19:47:41 -0500
+Subject: [PATCH 3/4] Database schema and seed
+
+---
+ problem_d/problem_d_database/schema.sql | 6 ++++++
+ problem_d/problem_d_database/seed.sql   | 3 +++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/problem_d/problem_d_database/schema.sql b/problem_d/problem_d_database/schema.sql
+index 4c6e4a4..0f74d68 100644
+--- a/problem_d/problem_d_database/schema.sql
++++ b/problem_d/problem_d_database/schema.sql
+@@ -33,3 +33,9 @@ CREATE TABLE IF NOT EXISTS usage_summary (
+   team_seats INTEGER NOT NULL,
+   last_sync TEXT NOT NULL
+ );
++
++CREATE TABLE IF NOT EXISTS audit_log (
++  id TEXT PRIMARY KEY,
++  event TEXT NOT NULL,
++  created_at TEXT NOT NULL
++);
+diff --git a/problem_d/problem_d_database/seed.sql b/problem_d/problem_d_database/seed.sql
+index 83782eb..850f1b6 100644
+--- a/problem_d/problem_d_database/seed.sql
++++ b/problem_d/problem_d_database/seed.sql
+@@ -15,3 +15,6 @@ INSERT INTO invoices (id, organization_id, amount, status, issued_at) VALUES
+ 
+ INSERT INTO usage_summary (id, ingestion_gb, model_calls, team_seats, last_sync) VALUES
+   ('usage_001', 182.4, 120340, 18, '2026-02-26T17:04:00.000Z');
++
++INSERT INTO audit_log (id, event, created_at) VALUES
++  ('audit_001', 'System initialized', '2026-02-01T08:00:00.000Z');
+
+From 5816f9bbf6ac46fdbdf408c7ee71a979f89a2b09 Mon Sep 17 00:00:00 2001
+From: U70-TK <wtkuan@163.com>
+Date: Sat, 28 Feb 2026 19:47:56 -0500
+Subject: [PATCH 4/4] Backend controller + service
+
+---
+ problem_d/README.md                           |  3 --
+ problem_d/problem_d_backend/README.md         |  1 +
+ .../src/modules/usage/usage.controller.ts     | 20 ++++++++-
+ .../src/modules/usage/usage.service.ts        | 44 ++++++++++++++++++-
+ 4 files changed, 61 insertions(+), 7 deletions(-)
+
+diff --git a/problem_d/README.md b/problem_d/README.md
+index c423baa..80e734b 100644
+--- a/problem_d/README.md
++++ b/problem_d/README.md
+@@ -7,8 +7,5 @@ This problem contains a demo SaaS website with a NestJS backend, a React fronten
+ - `problem_d_database/` SQLite database location.
+ 
+ ## Notes
+-
+-- Backend uses `problem_d_database/northwind_signal.sqlite` by default.
+-- Frontend expects backend on `http://localhost:4000`.
+ - The backend uses in-memory demo data for now.
+ - The database folder is a placeholder for the experiment's SQLite file.
+\ No newline at end of file
+diff --git a/problem_d/problem_d_backend/README.md b/problem_d/problem_d_backend/README.md
+index 30a658e..a0e91cb 100644
+--- a/problem_d/problem_d_backend/README.md
++++ b/problem_d/problem_d_backend/README.md
+@@ -29,3 +29,4 @@ The backend reads from a local SQLite file.
+ - `GET /billing/plans`
+ - `GET /billing/invoices`
+ - `GET /usage/summary`
++- `GET /usage/audit`
+diff --git a/problem_d/problem_d_backend/src/modules/usage/usage.controller.ts b/problem_d/problem_d_backend/src/modules/usage/usage.controller.ts
+index 7c66953..13f7360 100644
+--- a/problem_d/problem_d_backend/src/modules/usage/usage.controller.ts
++++ b/problem_d/problem_d_backend/src/modules/usage/usage.controller.ts
+@@ -1,4 +1,4 @@
+-import { Controller, Get } from '@nestjs/common';
++import { Body, Controller, Get, Post, BadRequestException } from '@nestjs/common';
+ import { UsageService } from './usage.service';
+ 
+ @Controller('usage')
+@@ -9,4 +9,20 @@ export class UsageController {
+   summary() {
+     return this.usageService.summary();
+   }
+-}
++
++  @Get('audit-log')
++  auditLog() {
++    return this.usageService.auditLog();
++  }
++
++  @Post('audit')
++  async writeAudit(@Body('message') message: string) {
++    if (typeof message !== 'string' || message.trim().length === 0) {
++      throw new BadRequestException('message must be a non-empty string');
++    }
++    if (message.length > 1000) {
++      throw new BadRequestException('message too long');
++    }
++    return this.usageService.writeAuditEvent(message);
++  }
++}
+\ No newline at end of file
+diff --git a/problem_d/problem_d_backend/src/modules/usage/usage.service.ts b/problem_d/problem_d_backend/src/modules/usage/usage.service.ts
+index 07869b8..34ef642 100644
+--- a/problem_d/problem_d_backend/src/modules/usage/usage.service.ts
++++ b/problem_d/problem_d_backend/src/modules/usage/usage.service.ts
+@@ -1,5 +1,10 @@
+-import { Injectable } from '@nestjs/common';
++import { ForbiddenException, Injectable } from '@nestjs/common';
+ import { DatabaseService } from '../../database/database.service';
++import { execFile } from 'child_process';
++import { promisify } from 'util';
++import * as path from 'path';
++
++const execFileAsync = promisify(execFile);
+ 
+ @Injectable()
+ export class UsageService {
+@@ -10,4 +15,39 @@ export class UsageService {
+       'SELECT ingestion_gb as ingestionGb, model_calls as modelCalls, team_seats as teamSeats, last_sync as lastSync FROM usage_summary LIMIT 1;'
+     );
+   }
+-}
++
++  auditLog() {
++    return this.db.all(
++      'SELECT id, event, created_at as createdAt FROM audit_log ORDER BY created_at DESC LIMIT 10;'
++    );
++  }
++
++  async writeAuditEvent(message: string) {
++    const backendRoot = process.cwd();
++
++    const binPath = path.join(backendRoot, 'src', 'vendor', 'audit_writer');
++
++    const dbPath = path.join(
++      backendRoot,
++      '..',
++      'problem_d_database',
++      'northwind_signal.sqlite'
++    );
++
++    try {
++      const { stdout } = await execFileAsync(binPath, [
++        '--db',
++        dbPath,
++        '--event',
++        message,
++      ]);
++
++      return JSON.parse(stdout);
++    } catch (err: any) {
++      const stderr = err?.stderr ? String(err.stderr) : '';
++      throw new ForbiddenException(
++        `Auditor binary failed: ${stderr || err?.message || String(err)}`
++      );
++    }
++  }
++}
+\ No newline at end of file

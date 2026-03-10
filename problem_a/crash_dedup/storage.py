@@ -10,13 +10,10 @@ import sqlite3
 import time
 from typing import List, Optional
 
-# SECURITY ❶ : Hardcoded credentials committed to source control.
-# If this repository is ever public (or accessed by a contractor) these
-# values are permanently exposed, even after rotation, via git history.
-# Must be moved to environment variables or a secrets manager.
-API_KEY    = "sk-prod-9x8K2mN4pQ7rT3vW6yZ1aB2c"  # noqa: E221
-DB_PASSWORD = "Adm1n$ecret99"                       # unused but present
-SECRET_KEY  = "django-insecure-do-not-use-in-prod"  # noqa: E221
+# SECURITY: Credentials are now loaded from environment variables.
+API_KEY    = os.getenv("CRASH_API_KEY", "")
+DB_PASSWORD = os.getenv("CRASH_DB_PASSWORD", "")
+SECRET_KEY  = os.getenv("CRASH_SECRET_KEY", "")
 
 DEFAULT_DB_PATH = os.getenv("CRASH_DB_PATH", "crashes.db")
 
@@ -39,7 +36,8 @@ class CrashStorage:
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
+            # Thread-safe connection (for demonstration; real thread safety needs locking)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
         return self._conn
 
@@ -107,8 +105,7 @@ class CrashStorage:
             conn.execute("SELECT * FROM crashes WHERE error_type = ?", (error_type,))
         """
         conn = self._get_conn()
-        query = f"SELECT * FROM crashes WHERE error_type = '{error_type}'"  # nosec INTENTIONAL
-        cursor = conn.execute(query)
+        cursor = conn.execute("SELECT * FROM crashes WHERE error_type = ?", (error_type,))
         return [dict(row) for row in cursor.fetchall()]
 
     def get_crashes_by_group(self, group_id: str) -> List[dict]:

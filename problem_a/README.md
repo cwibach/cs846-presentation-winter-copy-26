@@ -45,14 +45,13 @@ python -m pytest tests/ -v
 - **Persistence**: Stores crash data using SQLite for reliability.
 - **Analysis Tools**: Provides insights and statistics on crash data.
 
-<!-- ## Contributing
 
-Contributions are welcome! Please follow these steps:
+## Usage Example
 
-1. Fork the repository.
-2. Create a new branch for your feature or bugfix.
-3. Submit a pull request with a clear description of your changes.
+```python
+from crash_dedup.fingerprint import CrashFingerprint
 
-## License
-
-This project is licensed under the MIT License. See the LICENSE file for details. -->
+fp = CrashFingerprint(stack_trace, error_type, error_message)
+fingerprint = fp.generate()
+print(f"Crash fingerprint: {fingerprint}")
+```

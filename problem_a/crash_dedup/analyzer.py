@@ -38,6 +38,8 @@ class CrashAnalyzer:
         so any code path that dynamically computes the window can crash the
         entire analysis pipeline with ZeroDivisionError.
         """
+        if window_seconds <= 0:
+            raise ValueError("window_seconds must be positive")
         now = time.time()
         cutoff = now - window_seconds
         recent = [
@@ -46,7 +48,7 @@ class CrashAnalyzer:
             for crash in members
             if crash.get("timestamp", 0) >= cutoff
         ]
-        return len(recent) / (window_seconds / 3600)   # ZeroDivisionError if window=0
+        return len(recent) / (window_seconds / 3600)
 
     def get_error_distribution(self) -> Dict[str, float]:
         """Return percentage share of each error_type across all crashes.
@@ -58,8 +60,9 @@ class CrashAnalyzer:
         total = len(all_crashes)          # 0 when no crashes exist
 
         counts = Counter(c.get("error_type", "Unknown") for c in all_crashes)
+        if total == 0:
+            return {}
         return {etype: (n / total) * 100 for etype, n in counts.items()}
-        #                    ^^^ ZeroDivisionError when total == 0
 
     def get_new_crashes_today(self) -> int:
         """Count crash groups whose first occurrence is from today.

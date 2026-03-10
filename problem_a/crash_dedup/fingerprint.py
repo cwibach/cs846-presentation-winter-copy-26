@@ -17,7 +17,20 @@ MAX_FRAMES = 3  # NOTE: may miss important context for deep call stacks
 
 
 class CrashFingerprint:
-    """Generates a deterministic fingerprint hash for a single crash event."""
+
+    """
+    Generates a deterministic fingerprint hash for a single crash event.
+
+    Args:
+        stack_trace (str): Raw stack trace string.
+        error_type (str): Exception type.
+        error_message (str): Exception message.
+
+    Methods:
+        generate(): Returns fingerprint hash for crash.
+        normalize_error_message(msg): Static method to normalize error message.
+        parse_frames(): Parses stack trace into frames.
+    """
 
     def __init__(self, stack_trace: str, error_type: str, error_message: str):
         self.stack_trace = stack_trace
@@ -34,8 +47,7 @@ class CrashFingerprint:
 
         The fingerprint is built from:
           - error type
-          - error message   ← BUG: dynamic values (IPs, IDs) make identical
-                                    crashes produce different fingerprints
+          - normalized error message (dynamic values removed)
           - top MAX_FRAMES stack frames (file + function only, no line numbers)
 
         Returns:
@@ -45,12 +57,9 @@ class CrashFingerprint:
         frames = self.parse_frames()
         top_frames = frames[:MAX_FRAMES]
 
-        # BUG ❶ : raw error_message is included verbatim.
-        # Two crashes from different database hosts produce different fingerprints
-        # even though they represent the exact same code path and root cause:
-        #   "Connection refused: 10.0.0.1:5432"  →  fingerprint A
-        #   "Connection refused: 192.168.1.5:5432"  →  fingerprint B
-        components = [self.error_type, self.error_message]
+        # Normalize error_message to remove IPs, UUIDs, timestamps, hex codes
+        norm_msg = self.normalize_error_message(self.error_message)
+        components = [self.error_type, norm_msg]
 
         for file_path, line_num, func_name in top_frames:
             # Line number deliberately excluded so minor edits don't split groups.
@@ -58,6 +67,20 @@ class CrashFingerprint:
 
         raw = "|".join(components)
         return hashlib.md5(raw.encode()).hexdigest()  # nosec (non-crypto use)
+
+    @staticmethod
+    def normalize_error_message(msg: str) -> str:
+        # Remove IP addresses
+        msg = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<IP>", msg)
+        # Remove UUIDs
+        msg = re.sub(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", "<UUID>", msg)
+        # Remove timestamps (simple ISO format)
+        msg = re.sub(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\b", "<TS>", msg)
+        # Remove hex codes
+        msg = re.sub(r"\b0x[0-9a-fA-F]+\b", "<HEX>", msg)
+        # Remove port numbers
+        msg = re.sub(r":\d{2,5}\b", ":<PORT>", msg)
+        return msg
 
     def parse_frames(self) -> List[Tuple[str, str, str]]:
         """Extract (file, line, function) tuples from a Python traceback string."""
